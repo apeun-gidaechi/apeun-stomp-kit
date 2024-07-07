@@ -1,17 +1,6 @@
 import SocketRocket
 import Combine
 
-//@objc
-//public protocol ApeunStompDelegate {
-//    func stompClient(client: ApeunStomp!, didReceiveMessageWithJSONBody jsonBody: AnyObject?, akaStringBody stringBody: String?, withHeader header: ApeunStomp.StompHeaders?, withDestination destination: String)
-//    
-//    func stompClientDidDisconnect(client: ApeunStomp!)
-//    func stompClientDidConnect(client: ApeunStomp!)
-//    func serverDidSendReceipt(client: ApeunStomp!, withReceiptId receiptId: String)
-//    func serverDidSendError(client: ApeunStomp!, withErrorMessage description: String, detailedErrorMessage message: String?)
-//    func serverDidSendPing()
-//}
-
 public enum ApeunStompEvent {
     case stompClient(jsonBody: AnyObject?, stringBody: String?, header: ApeunStomp.StompHeaders?, destination: String)
     case stompClientDidDisconnect
@@ -21,7 +10,6 @@ public enum ApeunStompEvent {
     case serverDidSendPing
 }
 
-@objcMembers
 public class ApeunStomp: NSObject {
     
     public typealias StompHeaders = [String: String]
@@ -29,7 +17,6 @@ public class ApeunStomp: NSObject {
     
     // MARK: - Parameters
     private var request: URLRequest
-//    weak var delegate: ApeunStompDelegate?
     private var connectionHeaders: StompHeaders?
     
     var socket: SRWebSocket?
@@ -42,11 +29,9 @@ public class ApeunStomp: NSObject {
     
     public init(
         request: URLRequest,
-//        delegate: ApeunStompDelegate,
         connectionHeaders: StompHeaders? = nil
     ) {
         self.request = request
-//        self.delegate = delegate
         self.connectionHeaders = connectionHeaders
     }
     
@@ -61,10 +46,7 @@ public class ApeunStomp: NSObject {
         }
     }
     
-    private func closeSocket(){
-//        guard let delegate else {
-//            return
-//        }
+    private func closeSocket() {
         subject.send(.stompClientDidDisconnect)
         if socket != nil {
             // Close the socket
@@ -81,19 +63,19 @@ public class ApeunStomp: NSObject {
         }
         // Support for Spring Boot 2.1.x
         if connectionHeaders == nil {
-            connectionHeaders = [StompCommands.commandHeaderAcceptVersion:"1.1,1.2"]
+            connectionHeaders = [StompCommands.commandHeaderAcceptVersion.rawValue:"1.1,1.2"]
         } else {
-            connectionHeaders?[StompCommands.commandHeaderAcceptVersion] = "1.1,1.2"
+            connectionHeaders?[StompCommands.commandHeaderAcceptVersion.rawValue] = "1.1,1.2"
         }
         // at the moment only anonymous logins
-        self.sendFrame(command: StompCommands.commandConnect, header: connectionHeaders)
+        self.sendFrame(command: .commandConnect, header: connectionHeaders)
     }
     
     // MARK: - Send
     public func sendJSONForDict(dict: Encodable, to destination: String) {
         do {
             let json = try String(decoding: JSONEncoder().encode(dict), as: UTF8.self)
-            let header = [StompCommands.commandHeaderContentType:"application/json;charset=UTF-8"]
+            let header = [StompCommands.commandHeaderContentType.rawValue:"application/json;charset=UTF-8"]
             sendMessage(message: json, to: destination, withHeaders: header, withReceipt: nil)
         } catch {
             print("error serializing JSON: \(error)")
@@ -110,23 +92,23 @@ public class ApeunStomp: NSObject {
         
         // Setting up the receipt.
         if let receipt = receipt {
-            headers[StompCommands.commandHeaderReceipt] = receipt
+            headers[StompCommands.commandHeaderReceipt.rawValue] = receipt
         }
         
         // Setting up header destination.
-        headers[StompCommands.commandHeaderDestination] = destination
+        headers[StompCommands.commandHeaderDestination.rawValue] = destination
         
         // Setting up the content length.
         let contentLength = message.utf8.count
-        headers[StompCommands.commandHeaderContentLength] = "\(contentLength)"
+        headers[StompCommands.commandHeaderContentLength.rawValue] = "\(contentLength)"
         
         // Setting up content type as plain text.
-        if headers[StompCommands.commandHeaderContentType] == nil {
-            headers[StompCommands.commandHeaderContentType] = "text/plain"
+        if headers[StompCommands.commandHeaderContentType.rawValue] == nil {
+            headers[StompCommands.commandHeaderContentType.rawValue] = "text/plain"
         }
         sendFrame(
             body: message,
-            command: StompCommands.commandSend,
+            command: .commandSend,
             header: headers
         )
     }
@@ -134,7 +116,7 @@ public class ApeunStomp: NSObject {
     
     private func sendFrame(
         body: String? = nil,
-        command: String?,
+        command: StompCommands?,
         header: StompHeaders?
     ) {
         guard socket?.readyState == .OPEN else {
@@ -143,7 +125,7 @@ public class ApeunStomp: NSObject {
         }
         var frameString = ""
         if let command {
-            frameString = "\(command)\n"
+            frameString = "\(command.rawValue)\n"
         }
         
         header?.forEach{ key, value in
@@ -158,7 +140,8 @@ public class ApeunStomp: NSObject {
             frameString += "\n"
         }
         
-        frameString += StompCommands.controlChar
+//        frameString += StompCommands.controlChar.rawValue
+        frameString += String(format: "%C", arguments: [0x00])
         
         print(frameString)
         
@@ -192,28 +175,28 @@ public class ApeunStomp: NSObject {
     }
     
     // MARK: - Receive
-    private func receiveFrame(command: String, headers: StompHeaders, body: String?) {
-        if command == StompCommands.responseFrameConnected {
+    private func receiveFrame(command: StompCommands, headers: StompHeaders, body: String?) {
+        if command == .responseFrameConnected {
             // Connected
-            if let sessId = headers[StompCommands.responseHeaderSession] {
+            if let sessId = headers[StompCommands.responseHeaderSession.rawValue] {
                 sessionId = sessId
             }
             subject.send(.stompClientDidConnect)
-        } else if command == StompCommands.responseFrameMessage {   // Message comes to this part
+        } else if command == .responseFrameMessage {   // Message comes to this part
             // Response
             subject.send(.stompClient(jsonBody: self.dictForJSONString(jsonStr: body), stringBody: body, header: headers, destination: self.destinationFromHeader(header: headers)))
-        } else if command == StompCommands.responseFrameReceipt {   //
+        } else if command == .responseFrameReceipt {   //
             // Receipt
-            if let receiptId = headers[StompCommands.responseHeaderReceiptId] {
+            if let receiptId = headers[StompCommands.responseHeaderReceiptId.rawValue] {
                 subject.send(.serverDidSendReceipt(receiptId: receiptId))
             }
-        } else if command.count == 0 {
+        } else if command.rawValue.count == 0 {
             // Pong from the server
-            try? socket?.send(string: StompCommands.commandPing)
+            try? socket?.send(string: StompCommands.commandPing.rawValue)
             subject.send(.serverDidSendPing)
-        } else if command == StompCommands.responseFrameError {
+        } else if command == .responseFrameError {
             // Error
-            if let msg = headers[StompCommands.responseHeaderErrorMessage] {
+            if let msg = headers[StompCommands.responseHeaderErrorMessage.rawValue] {
                 subject.send(.serverDidSendError(description: msg, message: body))
             }
         }
@@ -226,29 +209,33 @@ public class ApeunStomp: NSObject {
     }
     
     public func subscribeToDestination(destination: String, ackMode: StompAckMode) {
-        var ack = ""
-        switch ackMode {
+        let ack = switch ackMode {
         case StompAckMode.ClientMode:
-            ack = StompCommands.ackClient
-            break
+            StompCommands.ackClient
         case StompAckMode.ClientIndividualMode:
-            ack = StompCommands.ackClientIndividual
-            break
+            StompCommands.ackClientIndividual
         default:
-            ack = StompCommands.ackAuto
-            break
+            StompCommands.ackAuto
         }
-        var headers = [StompCommands.commandHeaderDestination: destination, StompCommands.commandHeaderAck: ack, StompCommands.commandHeaderDestinationId: ""]
+        var headers = [
+            StompCommands.commandHeaderDestination.rawValue: destination,
+            StompCommands.commandHeaderAck.rawValue: ack.rawValue,
+            StompCommands.commandHeaderId.rawValue: ""
+        ]
         if destination != "" {
-            headers = [StompCommands.commandHeaderDestination: destination, StompCommands.commandHeaderAck: ack, StompCommands.commandHeaderDestinationId: destination]
+            headers = [
+                StompCommands.commandHeaderDestination.rawValue: destination,
+                StompCommands.commandHeaderAck.rawValue: ack.rawValue,
+                StompCommands.commandHeaderId.rawValue: destination
+            ]
         }
         self.sendFrame(body: nil, command: StompCommands.commandSubscribe, header: headers)
     }
     
     public func subscribeWithHeader(destination: String, withHeader header: StompHeaders) {
         var headerToSend = header
-        headerToSend[StompCommands.commandHeaderDestination] = destination
-        sendFrame(body: nil, command: StompCommands.commandSubscribe, header: headerToSend)
+        headerToSend[StompCommands.commandHeaderDestination.rawValue] = destination
+        sendFrame(body: nil, command: .commandSubscribe, header: headerToSend)
     }
     
     /*
@@ -257,47 +244,47 @@ public class ApeunStomp: NSObject {
     public func unsubscribe(destination: String) {
         connection = false
         var headerToSend: StompHeaders = [:]
-        headerToSend[StompCommands.commandHeaderDestinationId] = destination
-        sendFrame(body: nil, command: StompCommands.commandUnsubscribe, header: headerToSend)
+        headerToSend[StompCommands.commandHeaderId.rawValue] = destination
+        sendFrame(body: nil, command: .commandUnsubscribe, header: headerToSend)
     }
     
     public func begin(transactionId: String) {
         var headerToSend: StompHeaders = [:]
-        headerToSend[StompCommands.commandHeaderTransaction] = transactionId
-        sendFrame(command: StompCommands.commandBegin, header: headerToSend)
+        headerToSend[StompCommands.commandHeaderTransaction.rawValue] = transactionId
+        sendFrame(command: .commandBegin, header: headerToSend)
     }
     
     public func commit(transactionId: String) {
         var headerToSend: StompHeaders = [:]
-        headerToSend[StompCommands.commandHeaderTransaction] = transactionId
-        sendFrame(command: StompCommands.commandCommit, header: headerToSend)
+        headerToSend[StompCommands.commandHeaderTransaction.rawValue] = transactionId
+        sendFrame(command: .commandCommit, header: headerToSend)
     }
     
     public func abort(transactionId: String) {
         var headerToSend: StompHeaders = [:]
-        headerToSend[StompCommands.commandHeaderTransaction] = transactionId
-        sendFrame(command: StompCommands.commandAbort, header: headerToSend)
+        headerToSend[StompCommands.commandHeaderTransaction.rawValue] = transactionId
+        sendFrame(command: .commandAbort, header: headerToSend)
     }
     
     public func ack(messageId: String) {
         var headerToSend: StompHeaders = [:]
-        headerToSend[StompCommands.commandHeaderMessageId] = messageId
-        sendFrame(command: StompCommands.commandAck, header: headerToSend)
+        headerToSend[StompCommands.commandHeaderId.rawValue] = messageId
+        sendFrame(command: .commandAck, header: headerToSend)
     }
     
     public func ack(messageId: String, withSubscription subscription: String) {
         var headerToSend: StompHeaders = [:]
-        headerToSend[StompCommands.commandHeaderMessageId] = messageId
-        headerToSend[StompCommands.commandHeaderSubscription] = subscription
-        sendFrame(command: StompCommands.commandAck, header: headerToSend)
+        headerToSend[StompCommands.commandHeaderId.rawValue] = messageId
+        headerToSend[StompCommands.commandHeaderSubscription.rawValue] = subscription
+        sendFrame(command: .commandAck, header: headerToSend)
     }
     
     // MARK: - Disconnect
     public func disconnect() {
         connection = false
         var headerToSend: StompHeaders = [:]
-        headerToSend[StompCommands.commandDisconnect] = String(Int(NSDate().timeIntervalSince1970))
-        sendFrame(command: StompCommands.commandDisconnect, header: headerToSend)
+        headerToSend[StompCommands.commandDisconnect.rawValue] = String(Int(NSDate().timeIntervalSince1970))
+        sendFrame(command: .commandDisconnect, header: headerToSend)
         // Close the socket to allow recreation
         self.closeSocket()
     }
@@ -377,7 +364,7 @@ extension ApeunStomp: SRWebSocketDelegate {
                 body = body.replacingOccurrences(of: "\0", with: "")
             }
             
-            receiveFrame(command: command, headers: headers, body: body)
+            receiveFrame(command: StompCommands(rawValue: command) ?? .ackAuto, headers: headers, body: body)
         }
     }
     

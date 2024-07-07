@@ -1,46 +1,42 @@
-public struct StompCommands {
-}
-
-public extension StompCommands {
+public enum StompCommands: String, RawRepresentable {
 
     // Basic Commands
-    static let commandConnect = "CONNECT"
-    static let commandSend = "SEND"
-    static let commandSubscribe = "SUBSCRIBE"
-    static let commandUnsubscribe = "UNSUBSCRIBE"
-    static let commandBegin = "BEGIN"
-    static let commandCommit = "COMMIT"
-    static let commandAbort = "ABORT"
-    static let commandAck = "ACK"
-    static let commandDisconnect = "DISCONNECT"
-    static let commandPing = "\n"
+    case commandConnect = "CONNECT"
+    case commandSend = "SEND"
+    case commandSubscribe = "SUBSCRIBE"
+    case commandUnsubscribe = "UNSUBSCRIBE"
+    case commandBegin = "BEGIN"
+    case commandCommit = "COMMIT"
+    case commandAbort = "ABORT"
+    case commandAck = "ACK"
+    case commandDisconnect = "DISCONNECT"
+    case commandPing = "\n"
     
-    static let controlChar = String(format: "%C", arguments: [0x00])
+    case controlChar = ""
     
     // Ack Mode
-    static let ackClientIndividual = "client-individual"
-    static let ackClient = "client"
-    static let ackAuto = "auto"
+    case ackClientIndividual = "client-individual"
+    case ackClient = "client"
+    case ackAuto = "auto"
     // Header Commands
-    static let commandHeaderReceipt = "receipt"
-    static let commandHeaderDestination = "destination"
-    static let commandHeaderDestinationId = "id"
-    static let commandHeaderContentLength = "content-length"
-    static let commandHeaderContentType = "content-type"
-    static let commandHeaderAck = "ack"
-    static let commandHeaderTransaction = "transaction"
-    static let commandHeaderMessageId = "id"
-    static let commandHeaderSubscription = "subscription"
-    static let commandHeaderDisconnected = "disconnected"
-    static let commandHeaderHeartBeat = "heart-beat"
-    static let commandHeaderAcceptVersion = "accept-version"
+    case commandHeaderReceipt = "receipt"
+    case commandHeaderDestination = "destination"
+    case commandHeaderId = "id"
+    case commandHeaderContentLength = "content-length"
+    case commandHeaderContentType = "content-type"
+    case commandHeaderAck = "ack"
+    case commandHeaderTransaction = "transaction"
+    case commandHeaderSubscription = "subscription"
+    case commandHeaderDisconnected = "disconnected"
+    case commandHeaderHeartBeat = "heart-beat"
+    case commandHeaderAcceptVersion = "accept-version"
     // Header Response Keys
-    static let responseHeaderSession = "session"
-    static let responseHeaderReceiptId = "receipt-id"
-    static let responseHeaderErrorMessage = "message"
+    case responseHeaderSession = "session"
+    case responseHeaderReceiptId = "receipt-id"
+    case responseHeaderErrorMessage = "message"
     // Frame Response Keys
-    static let responseFrameConnected = "CONNECTED"
-    static let responseFrameMessage = "MESSAGE"
-    static let responseFrameReceipt = "RECEIPT"
-    static let responseFrameError = "ERROR"
+    case responseFrameConnected = "CONNECTED"
+    case responseFrameMessage = "MESSAGE"
+    case responseFrameReceipt = "RECEIPT"
+    case responseFrameError = "ERROR"
 }
