@@ -1,4 +1,8 @@
-struct StompCommands {
+public struct StompCommands {
+}
+
+public extension StompCommands {
+
     // Basic Commands
     static let commandConnect = "CONNECT"
     static let commandSend = "SEND"

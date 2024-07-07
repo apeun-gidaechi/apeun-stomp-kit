@@ -5,12 +5,13 @@ import PackageDescription
 
 let package = Package(
     name: "ApeunStompKit",
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS(.v13), .macOS(.v10_15)],
     products: [
         .library(
             name: "ApeunStompKit",
             targets: ["ApeunStompKit"]
-        )
+        ),
+        .executable(name: "Test", targets: ["Test"])
     ],
     targets: [
         .target(
@@ -39,6 +40,10 @@ let package = Package(
             name: "ApeunStompKit",
             dependencies: ["SocketRocket"],
             path: "Sources/ApeunStompKit"
+        ),
+        .target(
+            name: "Test",
+            dependencies: ["ApeunStompKit"]
         )
     ]
 )

@@ -1,24 +1,35 @@
 import SocketRocket
+import Combine
 
-@objc
-public protocol ApeunStompDelegate {
-    func stompClient(client: ApeunStomp!, didReceiveMessageWithJSONBody jsonBody: AnyObject?, akaStringBody stringBody: String?, withHeader header: ApeunStomp.StompHeaders?, withDestination destination: String)
-    
-    func stompClientDidDisconnect(client: ApeunStomp!)
-    func stompClientDidConnect(client: ApeunStomp!)
-    func serverDidSendReceipt(client: ApeunStomp!, withReceiptId receiptId: String)
-    func serverDidSendError(client: ApeunStomp!, withErrorMessage description: String, detailedErrorMessage message: String?)
-    func serverDidSendPing()
+//@objc
+//public protocol ApeunStompDelegate {
+//    func stompClient(client: ApeunStomp!, didReceiveMessageWithJSONBody jsonBody: AnyObject?, akaStringBody stringBody: String?, withHeader header: ApeunStomp.StompHeaders?, withDestination destination: String)
+//    
+//    func stompClientDidDisconnect(client: ApeunStomp!)
+//    func stompClientDidConnect(client: ApeunStomp!)
+//    func serverDidSendReceipt(client: ApeunStomp!, withReceiptId receiptId: String)
+//    func serverDidSendError(client: ApeunStomp!, withErrorMessage description: String, detailedErrorMessage message: String?)
+//    func serverDidSendPing()
+//}
+
+public enum ApeunStompEvent {
+    case stompClient(jsonBody: AnyObject?, stringBody: String?, header: ApeunStomp.StompHeaders?, destination: String)
+    case stompClientDidDisconnect
+    case stompClientDidConnect
+    case serverDidSendReceipt(receiptId: String)
+    case serverDidSendError(description: String, message: String?)
+    case serverDidSendPing
 }
 
 @objcMembers
 public class ApeunStomp: NSObject {
     
     public typealias StompHeaders = [String: String]
+    private var subscriptions = Set<AnyCancellable>()
     
     // MARK: - Parameters
     private var request: URLRequest
-    weak var delegate: ApeunStompDelegate?
+//    weak var delegate: ApeunStompDelegate?
     private var connectionHeaders: StompHeaders?
     
     var socket: SRWebSocket?
@@ -27,13 +38,15 @@ public class ApeunStomp: NSObject {
     private(set) var connection: Bool = false
     private var reconnectTimer : Timer?
     
-    init(
+    private let subject = PassthroughSubject<ApeunStompEvent, Never>()
+    
+    public init(
         request: URLRequest,
-        delegate: ApeunStompDelegate,
+//        delegate: ApeunStompDelegate,
         connectionHeaders: StompHeaders? = nil
     ) {
         self.request = request
-        self.delegate = delegate
+//        self.delegate = delegate
         self.connectionHeaders = connectionHeaders
     }
     
@@ -49,17 +62,15 @@ public class ApeunStomp: NSObject {
     }
     
     private func closeSocket(){
-        guard let delegate else {
-            return
-        }
-        DispatchQueue.main.async {
-            delegate.stompClientDidDisconnect(client: self)
-            if self.socket != nil {
-                // Close the socket
-                self.socket!.close()
-                self.socket!.delegate = nil
-                self.socket = nil
-            }
+//        guard let delegate else {
+//            return
+//        }
+        subject.send(.stompClientDidDisconnect)
+        if socket != nil {
+            // Close the socket
+            socket!.close()
+            socket!.delegate = nil
+            socket = nil
         }
     }
     
@@ -127,11 +138,7 @@ public class ApeunStomp: NSObject {
         header: StompHeaders?
     ) {
         guard socket?.readyState == .OPEN else {
-            if let delegate = delegate {
-                DispatchQueue.main.async {
-                    delegate.stompClientDidDisconnect(client: self)
-                }
-            }
+            subject.send(.stompClientDidDisconnect)
             return
         }
         var frameString = ""
@@ -152,6 +159,8 @@ public class ApeunStomp: NSObject {
         }
         
         frameString += StompCommands.controlChar
+        
+        print(frameString)
         
         try! socket?.send(string: frameString)
     }
@@ -189,44 +198,23 @@ public class ApeunStomp: NSObject {
             if let sessId = headers[StompCommands.responseHeaderSession] {
                 sessionId = sessId
             }
-            
-            if let delegate = delegate {
-                DispatchQueue.main.async {
-                    delegate.stompClientDidConnect(client: self)
-                }
-            }
+            subject.send(.stompClientDidConnect)
         } else if command == StompCommands.responseFrameMessage {   // Message comes to this part
             // Response
-            if let delegate = delegate {
-                DispatchQueue.main.async {
-                    delegate.stompClient(client: self, didReceiveMessageWithJSONBody: self.dictForJSONString(jsonStr: body), akaStringBody: body, withHeader: headers, withDestination: self.destinationFromHeader(header: headers))
-                }
-            }
+            subject.send(.stompClient(jsonBody: self.dictForJSONString(jsonStr: body), stringBody: body, header: headers, destination: self.destinationFromHeader(header: headers)))
         } else if command == StompCommands.responseFrameReceipt {   //
             // Receipt
-            if let delegate = delegate {
-                if let receiptId = headers[StompCommands.responseHeaderReceiptId] {
-                    DispatchQueue.main.async {
-                        delegate.serverDidSendReceipt(client: self, withReceiptId: receiptId)
-                    }
-                }
+            if let receiptId = headers[StompCommands.responseHeaderReceiptId] {
+                subject.send(.serverDidSendReceipt(receiptId: receiptId))
             }
         } else if command.count == 0 {
             // Pong from the server
             try? socket?.send(string: StompCommands.commandPing)
-            if let delegate = delegate {
-                DispatchQueue.main.async {
-                    delegate.serverDidSendPing()
-                }
-            }
+            subject.send(.serverDidSendPing)
         } else if command == StompCommands.responseFrameError {
             // Error
-            if let delegate = delegate {
-                if let msg = headers[StompCommands.responseHeaderErrorMessage] {
-                    DispatchQueue.main.async {
-                        delegate.serverDidSendError(client: self, withErrorMessage: msg, detailedErrorMessage: body)
-                    }
-                }
+            if let msg = headers[StompCommands.responseHeaderErrorMessage] {
+                subject.send(.serverDidSendError(description: msg, message: body))
             }
         }
     }
@@ -340,11 +328,17 @@ public class ApeunStomp: NSObject {
     }
     
     // Autodisconnect with a given time
-    public func autoDisconnect(time: Double){
+    public func autoDisconnect(time: Double) {
         DispatchQueue.main.asyncAfter(deadline: .now() + time) {
             // Disconnect the socket
             self.disconnect()
         }
+    }
+    
+    public func subscribe(_ subscriber: @escaping (ApeunStompEvent) -> Void) {
+        subject
+            .sink(receiveValue: subscriber)
+            .store(in: &subscriptions)
     }
 }
 
@@ -404,20 +398,12 @@ extension ApeunStomp: SRWebSocketDelegate {
     
     public func webSocket(_ webSocket: SRWebSocket, didFailWithError error: Error) {
         //        print("didFailWithError: \(String(describing: error))")
-        if let delegate = delegate {
-            DispatchQueue.main.async {
-                delegate.serverDidSendError(client: self, withErrorMessage: error.localizedDescription, detailedErrorMessage: nil)
-            }
-        }
+        subject.send(.serverDidSendError(description: error.localizedDescription, message: nil))
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didCloseWithCode code: Int, reason: String?, wasClean: Bool) {
         //        print("didCloseWithCode \(code), reason: \(String(describing: reason))")
-        if let delegate = delegate {
-            DispatchQueue.main.async {
-                delegate.stompClientDidDisconnect(client: self)
-            }
-        }
+        subject.send(.stompClientDidDisconnect)
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didReceivePong pongPayload: Data?) {
