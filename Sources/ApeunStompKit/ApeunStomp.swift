@@ -16,28 +16,33 @@ public class ApeunStomp: NSObject {
     
     public typealias StompHeaders = [String: String]
     
-    var socket: SRWebSocket?
-    var sessionId: String?
+    // MARK: - Parameters
+    private var request: URLRequest
     weak var delegate: ApeunStompDelegate?
     private var connectionHeaders: StompHeaders?
+    
+    var socket: SRWebSocket?
+    var sessionId: String?
+    
     private(set) var connection: Bool = false
-    private var urlRequest: URLRequest?
     private var reconnectTimer : Timer?
     
-    // MARK: - Start / End
-    public func openSocketWithURLRequest(request: URLRequest, delegate: ApeunStompDelegate, connectionHeaders: StompHeaders? = nil) {
-        self.connectionHeaders = connectionHeaders
+    init(
+        request: URLRequest,
+        delegate: ApeunStompDelegate,
+        connectionHeaders: StompHeaders? = nil
+    ) {
+        self.request = request
         self.delegate = delegate
-        self.urlRequest = request
-        
-        // Opening the socket
-        openSocket()
-        self.connection = true
+        self.connectionHeaders = connectionHeaders
     }
     
-    private func openSocket() {
+    // MARK: - Start / End
+    
+    public func openSocket() {
+        self.connection = true
         if socket == nil || socket?.readyState == .CLOSED {
-            socket = SRWebSocket(urlRequest: urlRequest!)
+            socket = SRWebSocket(urlRequest: request)
             socket!.delegate = self
             socket!.open()
         }
@@ -47,7 +52,7 @@ public class ApeunStomp: NSObject {
         guard let delegate else {
             return
         }
-        DispatchQueue.main.async(execute: {
+        DispatchQueue.main.async {
             delegate.stompClientDidDisconnect(client: self)
             if self.socket != nil {
                 // Close the socket
@@ -55,7 +60,7 @@ public class ApeunStomp: NSObject {
                 self.socket!.delegate = nil
                 self.socket = nil
             }
-        })
+        }
     }
     
     private func connect() {
@@ -70,74 +75,76 @@ public class ApeunStomp: NSObject {
             connectionHeaders?[StompCommands.commandHeaderAcceptVersion] = "1.1,1.2"
         }
         // at the moment only anonymous logins
-        self.sendFrame(command: StompCommands.commandConnect, header: connectionHeaders, body: nil)
+        self.sendFrame(command: StompCommands.commandConnect, header: connectionHeaders)
     }
     
     // MARK: - Send
-    public func sendJSONForDict(dict: AnyObject, toDestination destination: String) {
+    public func sendJSONForDict(dict: Encodable, to destination: String) {
         do {
-            let theJSONData = try JSONSerialization.data(withJSONObject: dict, options: JSONSerialization.WritingOptions())
-            let theJSONText = String(data: theJSONData, encoding: String.Encoding.utf8)
+            let json = try String(decoding: JSONEncoder().encode(dict), as: UTF8.self)
             let header = [StompCommands.commandHeaderContentType:"application/json;charset=UTF-8"]
-            sendMessage(message: theJSONText!, toDestination: destination, withHeaders: header, withReceipt: nil)
+            sendMessage(message: json, to: destination, withHeaders: header, withReceipt: nil)
         } catch {
             print("error serializing JSON: \(error)")
         }
     }
     
-    public func sendMessage(message: String, toDestination destination: String, withHeaders headers: StompHeaders?, withReceipt receipt: String?) {
-        var headersToSend: StompHeaders = [:]
-        if let headers = headers {
-            headersToSend = headers
-        }
+    public func sendMessage(
+        message: String,
+        to destination: String,
+        withHeaders headers: StompHeaders?,
+        withReceipt receipt: String?
+    ) {
+        var headers = headers ?? [:]
         
         // Setting up the receipt.
         if let receipt = receipt {
-            headersToSend[StompCommands.commandHeaderReceipt] = receipt
+            headers[StompCommands.commandHeaderReceipt] = receipt
         }
         
-        headersToSend[StompCommands.commandHeaderDestination] = destination
+        // Setting up header destination.
+        headers[StompCommands.commandHeaderDestination] = destination
         
         // Setting up the content length.
         let contentLength = message.utf8.count
-        headersToSend[StompCommands.commandHeaderContentLength] = "\(contentLength)"
+        headers[StompCommands.commandHeaderContentLength] = "\(contentLength)"
         
         // Setting up content type as plain text.
-        if headersToSend[StompCommands.commandHeaderContentType] == nil {
-            headersToSend[StompCommands.commandHeaderContentType] = "text/plain"
+        if headers[StompCommands.commandHeaderContentType] == nil {
+            headers[StompCommands.commandHeaderContentType] = "text/plain"
         }
-        sendFrame(command: StompCommands.commandSend, header: headersToSend, body: message as AnyObject)
+        sendFrame(
+            body: message,
+            command: StompCommands.commandSend,
+            header: headers
+        )
     }
     
     
-    private func sendFrame(command: String?, header: StompHeaders?, body: AnyObject?) {
+    private func sendFrame(
+        body: String? = nil,
+        command: String?,
+        header: StompHeaders?
+    ) {
         guard socket?.readyState == .OPEN else {
             if let delegate = delegate {
-                DispatchQueue.main.async(execute: {
+                DispatchQueue.main.async {
                     delegate.stompClientDidDisconnect(client: self)
-                })
+                }
             }
             return
         }
         var frameString = ""
-        if command != nil {
-            frameString = command! + "\n"
+        if let command {
+            frameString = "\(command)\n"
         }
         
-        if let header = header {
-            for (key, value) in header {
-                frameString += key
-                frameString += ":"
-                frameString += value
-                frameString += "\n"
-            }
+        header?.forEach{ key, value in
+            frameString += "\(key):\(value)\n"
         }
         
-        if let body = body as? String {
-            frameString += "\n"
-            frameString += body
-        } else if let _ = body as? NSData {
-            
+        if let body {
+            frameString += "\n\(body)"
         }
         
         if body == nil {
@@ -184,41 +191,41 @@ public class ApeunStomp: NSObject {
             }
             
             if let delegate = delegate {
-                DispatchQueue.main.async(execute: {
+                DispatchQueue.main.async {
                     delegate.stompClientDidConnect(client: self)
-                })
+                }
             }
         } else if command == StompCommands.responseFrameMessage {   // Message comes to this part
             // Response
             if let delegate = delegate {
-                DispatchQueue.main.async(execute: {
+                DispatchQueue.main.async {
                     delegate.stompClient(client: self, didReceiveMessageWithJSONBody: self.dictForJSONString(jsonStr: body), akaStringBody: body, withHeader: headers, withDestination: self.destinationFromHeader(header: headers))
-                })
+                }
             }
         } else if command == StompCommands.responseFrameReceipt {   //
             // Receipt
             if let delegate = delegate {
                 if let receiptId = headers[StompCommands.responseHeaderReceiptId] {
-                    DispatchQueue.main.async(execute: {
+                    DispatchQueue.main.async {
                         delegate.serverDidSendReceipt(client: self, withReceiptId: receiptId)
-                    })
+                    }
                 }
             }
         } else if command.count == 0 {
             // Pong from the server
             try? socket?.send(string: StompCommands.commandPing)
             if let delegate = delegate {
-                DispatchQueue.main.async(execute: {
+                DispatchQueue.main.async {
                     delegate.serverDidSendPing()
-                })
+                }
             }
         } else if command == StompCommands.responseFrameError {
             // Error
             if let delegate = delegate {
                 if let msg = headers[StompCommands.responseHeaderErrorMessage] {
-                    DispatchQueue.main.async(execute: {
+                    DispatchQueue.main.async {
                         delegate.serverDidSendError(client: self, withErrorMessage: msg, detailedErrorMessage: body)
-                    })
+                    }
                 }
             }
         }
@@ -247,13 +254,13 @@ public class ApeunStomp: NSObject {
         if destination != "" {
             headers = [StompCommands.commandHeaderDestination: destination, StompCommands.commandHeaderAck: ack, StompCommands.commandHeaderDestinationId: destination]
         }
-        self.sendFrame(command: StompCommands.commandSubscribe, header: headers, body: nil)
+        self.sendFrame(body: nil, command: StompCommands.commandSubscribe, header: headers)
     }
     
     public func subscribeWithHeader(destination: String, withHeader header: StompHeaders) {
         var headerToSend = header
         headerToSend[StompCommands.commandHeaderDestination] = destination
-        sendFrame(command: StompCommands.commandSubscribe, header: headerToSend, body: nil)
+        sendFrame(body: nil, command: StompCommands.commandSubscribe, header: headerToSend)
     }
     
     /*
@@ -263,38 +270,38 @@ public class ApeunStomp: NSObject {
         connection = false
         var headerToSend: StompHeaders = [:]
         headerToSend[StompCommands.commandHeaderDestinationId] = destination
-        sendFrame(command: StompCommands.commandUnsubscribe, header: headerToSend, body: nil)
+        sendFrame(body: nil, command: StompCommands.commandUnsubscribe, header: headerToSend)
     }
     
     public func begin(transactionId: String) {
         var headerToSend: StompHeaders = [:]
         headerToSend[StompCommands.commandHeaderTransaction] = transactionId
-        sendFrame(command: StompCommands.commandBegin, header: headerToSend, body: nil)
+        sendFrame(command: StompCommands.commandBegin, header: headerToSend)
     }
     
     public func commit(transactionId: String) {
         var headerToSend: StompHeaders = [:]
         headerToSend[StompCommands.commandHeaderTransaction] = transactionId
-        sendFrame(command: StompCommands.commandCommit, header: headerToSend, body: nil)
+        sendFrame(command: StompCommands.commandCommit, header: headerToSend)
     }
     
     public func abort(transactionId: String) {
         var headerToSend: StompHeaders = [:]
         headerToSend[StompCommands.commandHeaderTransaction] = transactionId
-        sendFrame(command: StompCommands.commandAbort, header: headerToSend, body: nil)
+        sendFrame(command: StompCommands.commandAbort, header: headerToSend)
     }
     
     public func ack(messageId: String) {
         var headerToSend: StompHeaders = [:]
         headerToSend[StompCommands.commandHeaderMessageId] = messageId
-        sendFrame(command: StompCommands.commandAck, header: headerToSend, body: nil)
+        sendFrame(command: StompCommands.commandAck, header: headerToSend)
     }
     
     public func ack(messageId: String, withSubscription subscription: String) {
         var headerToSend: StompHeaders = [:]
         headerToSend[StompCommands.commandHeaderMessageId] = messageId
         headerToSend[StompCommands.commandHeaderSubscription] = subscription
-        sendFrame(command: StompCommands.commandAck, header: headerToSend, body: nil)
+        sendFrame(command: StompCommands.commandAck, header: headerToSend)
     }
     
     // MARK: - Disconnect
@@ -302,40 +309,34 @@ public class ApeunStomp: NSObject {
         connection = false
         var headerToSend: StompHeaders = [:]
         headerToSend[StompCommands.commandDisconnect] = String(Int(NSDate().timeIntervalSince1970))
-        sendFrame(command: StompCommands.commandDisconnect, header: headerToSend, body: nil)
+        sendFrame(command: StompCommands.commandDisconnect, header: headerToSend)
         // Close the socket to allow recreation
         self.closeSocket()
     }
     
     // Reconnect after one sec or arg, if reconnect is available
     // TODO: MAKE A VARIABLE TO CHECK RECONNECT OPTION IS AVAILABLE OR NOT
-    public func reconnect(request: URLRequest, delegate: ApeunStompDelegate, connectionHeaders: StompHeaders = [:], time: Double = 1.0, exponentialBackoff: Bool = true){
-        reconnectTimer = Timer.scheduledTimer(withTimeInterval: time, repeats: true, block: { _ in
-            self.reconnectLogic(request: request, delegate: delegate
-                                , connectionHeaders: connectionHeaders)
-        })
-    }
+//    public func reconnect(request: URLRequest, delegate: ApeunStompDelegate, connectionHeaders: StompHeaders = [:], time: Double = 1.0, exponentialBackoff: Bool = true){
+//        reconnectTimer = Timer.scheduledTimer(withTimeInterval: time, repeats: true, block: { _ in
+//            self.reconnectLogic(request: request, delegate: delegate
+//                                , connectionHeaders: connectionHeaders)
+//        })
+//    }
     
-    private func reconnectLogic(request: URLRequest, delegate: ApeunStompDelegate, connectionHeaders: StompHeaders = [:]){
-        // Check if connection is alive or dead
-        if (!self.connection){
-            self.checkConnectionHeader(connectionHeaders: connectionHeaders) ? self.openSocketWithURLRequest(request: request, delegate: delegate, connectionHeaders: connectionHeaders) : self.openSocketWithURLRequest(request: request, delegate: delegate)
-        }
-    }
+//    private func reconnectLogic(request: URLRequest, delegate: ApeunStompDelegate, connectionHeaders: StompHeaders = [:]){
+//        // Check if connection is alive or dead
+//        if (!self.connection) {
+//            if !connectionHeaders.isEmpty {
+//                self.openSocket(request: request, delegate: delegate, connectionHeaders: connectionHeaders)
+//            } else {
+//                self.openSocket(request: request, delegate: delegate)
+//            }
+//        }
+//    }
     
     public func stopReconnect() {
         reconnectTimer?.invalidate()
         reconnectTimer = nil
-    }
-    
-    private func checkConnectionHeader(connectionHeaders: StompHeaders = [:]) -> Bool{
-        if (connectionHeaders.isEmpty){
-            // No connection header
-            return false
-        } else {
-            // There is a connection header
-            return true
-        }
     }
     
     // Autodisconnect with a given time
@@ -350,7 +351,6 @@ public class ApeunStomp: NSObject {
 
 // MARK: - SRWebSocketDelegate
 extension ApeunStomp: SRWebSocketDelegate {
-    
     private func processString(string: String) {
         var contents = string.components(separatedBy: "\n")
         if contents.first == "" {
@@ -388,8 +388,6 @@ extension ApeunStomp: SRWebSocketDelegate {
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didReceiveMessage message: Any) {
-        
-        
         if let strData = message as? NSData {
             if let msg = String(data: strData as Data, encoding: String.Encoding.utf8) {
                 processString(string: msg)
@@ -400,7 +398,7 @@ extension ApeunStomp: SRWebSocketDelegate {
     }
     
     public func webSocketDidOpen(_ webSocket: SRWebSocket) {
-//        print("WebSocket is connected")
+        //        print("WebSocket is connected")
         connect()
     }
     
@@ -414,7 +412,7 @@ extension ApeunStomp: SRWebSocketDelegate {
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didCloseWithCode code: Int, reason: String?, wasClean: Bool) {
-//        print("didCloseWithCode \(code), reason: \(String(describing: reason))")
+        //        print("didCloseWithCode \(code), reason: \(String(describing: reason))")
         if let delegate = delegate {
             DispatchQueue.main.async {
                 delegate.stompClientDidDisconnect(client: self)
@@ -423,6 +421,6 @@ extension ApeunStomp: SRWebSocketDelegate {
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didReceivePong pongPayload: Data?) {
-//        print("didReceivePong")
+        //        print("didReceivePong")
     }
 }
