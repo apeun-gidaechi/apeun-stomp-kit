@@ -5,6 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "ApeunStompKit",
+    platforms: [.iOS(.v13)],
     products: [
         .library(
             name: "ApeunStompKit",
