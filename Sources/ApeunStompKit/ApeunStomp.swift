@@ -202,18 +202,21 @@ public class ApeunStomp: NSObject {
     }
     
     // MARK: - Subscribe
-    public func subBody<D: Decodable>(destination: String, res: D.Type) -> AnyPublisher<D, StompError> {
+    public func subBody<D: Decodable>(
+        destination: String,
+        res: D.Type
+    ) -> AnyPublisher<D, StompError> {
         connection = true
         subscribeToDestination(destination: destination, ackMode: .AutoMode)
         return subject
-            .tryMap { e in
+            .tryMap { (e: ApeunStompEvent) -> D in
                 guard case .stompClient(let jsonBody, _, _, let d) = e,
                       d == destination,
-                        let json = jsonBody.data(using: .utf8) else {
+                      let json = jsonBody.data(using: .utf8) else {
                     if case .serverDidSendError(let description, let message) = e {
                         print("\(description), \(message)")
                     }
-                    throw StompError.unknownError
+                    throw StompError.unknown
                 }
                 do {
                     let res = try self.jsonDecoder.decode(D.self, from: json)
@@ -224,13 +227,13 @@ public class ApeunStomp: NSObject {
                     throw StompError.decodingFailure
                 }
             }
-            .compactMap { $0 }
-            .mapError {
-                if let error = $0 as? StompError {
-                    return error
+            .mapError { (error: Error) -> StompError in
+                guard let error = error as? StompError else {
+                    return StompError.unknown
                 }
-                return StompError.unknownError
+                return error
             }
+            .receive(on: DispatchQueue.main)
             .eraseToAnyPublisher()
     }
     
@@ -253,6 +256,41 @@ public class ApeunStomp: NSObject {
             }
             .eraseToAnyPublisher()
     }
+    
+    public func subSendError() -> AnyPublisher<SendStompError, Never> {
+        subject
+            .compactMap { e in
+                guard case .serverDidSendError(let description, let message) = e else {
+                    return nil
+                }
+                return SendStompError(description: description, message: message)
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    public func subDisconnect() -> AnyPublisher<Void, Never> {
+        subject
+            .compactMap { e in
+                guard case .stompClientDidDisconnect = e else {
+                    return nil
+                }
+                return
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    public func subSendReceipt() -> AnyPublisher<String, Never> {
+        subject
+            .compactMap { e in
+                guard case .serverDidSendReceipt(let receiptId) = e else {
+                    return nil
+                }
+                return receiptId
+            }
+            .eraseToAnyPublisher()
+    }
+    
+
     
     public func subscribeToDestination(destination: String, ackMode: StompAckMode) {
         let ack = switch ackMode {
