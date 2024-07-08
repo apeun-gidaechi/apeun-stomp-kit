@@ -2,7 +2,7 @@ import SocketRocket
 import Combine
 
 public enum ApeunStompEvent {
-    case stompClient(jsonBody: AnyObject?, stringBody: String?, header: ApeunStomp.StompHeaders?, destination: String)
+    case stompClient(jsonBody: String, stringBody: String?, header: ApeunStomp.StompHeaders?, destination: String)
     case stompClientDidDisconnect
     case stompClientDidConnect
     case serverDidSendReceipt(receiptId: String)
@@ -13,8 +13,6 @@ public enum ApeunStompEvent {
 public class ApeunStomp: NSObject {
     
     public typealias StompHeaders = [String: String]
-    private var subscriptions = Set<AnyCancellable>()
-    
     // MARK: - Parameters
     private var request: URLRequest
     private var connectionHeaders: StompHeaders?
@@ -25,7 +23,8 @@ public class ApeunStomp: NSObject {
     private(set) var connection: Bool = false
     private var reconnectTimer : Timer?
     
-    private let subject = PassthroughSubject<ApeunStompEvent, Never>()
+    public let subject = PassthroughSubject<ApeunStompEvent, Never>()
+    private let jsonDecoder = JSONDecoder()
     
     public init(
         request: URLRequest,
@@ -184,7 +183,7 @@ public class ApeunStomp: NSObject {
             subject.send(.stompClientDidConnect)
         } else if command == .responseFrameMessage {   // Message comes to this part
             // Response
-            subject.send(.stompClient(jsonBody: self.dictForJSONString(jsonStr: body), stringBody: body, header: headers, destination: self.destinationFromHeader(header: headers)))
+            subject.send(.stompClient(jsonBody:/* self.dictForJSONString(jsonStr: body)*/body ?? "", stringBody: body, header: headers, destination: self.destinationFromHeader(header: headers)))
         } else if command == .responseFrameReceipt {   //
             // Receipt
             if let receiptId = headers[StompCommands.responseHeaderReceiptId.rawValue] {
@@ -203,9 +202,56 @@ public class ApeunStomp: NSObject {
     }
     
     // MARK: - Subscribe
-    public func subscribe(destination: String) {
+    public func subBody<D: Decodable>(destination: String, res: D.Type) -> AnyPublisher<D, StompError> {
         connection = true
         subscribeToDestination(destination: destination, ackMode: .AutoMode)
+        return subject
+            .tryMap { e in
+                guard case .stompClient(let jsonBody, _, _, let d) = e,
+                      d == destination,
+                        let json = jsonBody.data(using: .utf8) else {
+                    if case .serverDidSendError(let description, let message) = e {
+                        print("\(description), \(message)")
+                    }
+                    throw StompError.unknownError
+                }
+                do {
+                    let res = try self.jsonDecoder.decode(D.self, from: json)
+                    print(res)
+                    return res
+                } catch {
+                    print(error)
+                    throw StompError.decodingFailure
+                }
+            }
+            .compactMap { $0 }
+            .mapError {
+                if let error = $0 as? StompError {
+                    return error
+                }
+                return StompError.unknownError
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    public func subConnect() -> AnyPublisher<Void, Never> {
+        subject
+            .compactMap { e in
+                guard case .stompClientDidConnect = e else {
+                    return nil
+                }
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    public func subPing() -> AnyPublisher<Void, Never> {
+        subject
+            .compactMap { e in
+                guard case .serverDidSendPing = e else {
+                    return nil
+                }
+            }
+            .eraseToAnyPublisher()
     }
     
     public func subscribeToDestination(destination: String, ackMode: StompAckMode) {
@@ -320,12 +366,6 @@ public class ApeunStomp: NSObject {
             // Disconnect the socket
             self.disconnect()
         }
-    }
-    
-    public func subscribe(_ subscriber: @escaping (ApeunStompEvent) -> Void) {
-        subject
-            .sink(receiveValue: subscriber)
-            .store(in: &subscriptions)
     }
 }
 
