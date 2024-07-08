@@ -44,7 +44,8 @@ let package = Package(
         ),
         .target(
             name: "Test",
-            dependencies: ["ApeunStompKit"]
+            dependencies: ["ApeunStompKit"],
+            path: "Sources/Test"
         )
     ]
 )
