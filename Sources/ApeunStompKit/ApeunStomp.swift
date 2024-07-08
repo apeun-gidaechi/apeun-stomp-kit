@@ -214,7 +214,7 @@ public class ApeunStomp: NSObject {
                       d == destination,
                       let json = jsonBody.data(using: .utf8) else {
                     if case .serverDidSendError(let description, let message) = e {
-                        print("\(description), \(message)")
+                        print("\(description), \(message ?? "")")
                     }
                     throw StompError.unknown
                 }

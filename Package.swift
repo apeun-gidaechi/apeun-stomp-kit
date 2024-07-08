@@ -18,6 +18,7 @@ let package = Package(
             name: "SocketRocket",
             path: "Sources/SocketRocket",
             exclude: ["Resources"],
+            sources: [".", "Internal"],
             publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("."),
