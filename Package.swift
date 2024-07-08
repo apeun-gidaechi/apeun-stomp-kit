@@ -16,7 +16,7 @@ let package = Package(
     targets: [
         .target(
             name: "SocketRocket",
-            path: "Sources/SocketRocket",
+            path: "SocketRocket",
             exclude: ["Resources"],
             sources: [".", "Internal"],
             publicHeadersPath: "include",
@@ -40,12 +40,12 @@ let package = Package(
         .target(
             name: "ApeunStompKit",
             dependencies: ["SocketRocket"],
-            path: "Sources/ApeunStompKit"
+            path: "ApeunStompKit"
         ),
         .executableTarget(
             name: "Test",
             dependencies: ["ApeunStompKit"],
-            path: "Sources/Test"
+            path: "Test"
         )
     ]
 )
