@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "socketrocket",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apeun-gidaechi/SocketRocket.git",
+      "state" : {
+        "revision" : "8ffbc307b4f7ff343fad54456151b137bb57840a",
+        "version" : "1.0.0"
+      }
+    }
+  ],
+  "version" : 2
+}
