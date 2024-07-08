@@ -9,7 +9,7 @@ let package = Package(
     products: [
         .library(
             name: "ApeunStompKit",
-            targets: ["ApeunStompKit"]
+            targets: ["ApeunStompKit", "SocketRocket"]
         ),
         .executable(name: "Test", targets: ["Test"])
     ],
