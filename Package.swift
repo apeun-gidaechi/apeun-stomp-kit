@@ -14,7 +14,7 @@ let package = Package(
         .executable(name: "Test", targets: ["Test"])
     ],
     dependencies: [
-        .package(url: "https://github.com/apeun-gidaechi/SocketRocket.git", exact: "1.0.0")
+        .package(url: "https://github.com/apeun-gidaechi/SocketRocket.git", exact: "1.0.1")
     ],
     targets: [
         .target(
