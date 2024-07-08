@@ -42,7 +42,7 @@ let package = Package(
             dependencies: ["SocketRocket"],
             path: "Sources/ApeunStompKit"
         ),
-        .target(
+        .executableTarget(
             name: "Test",
             dependencies: ["ApeunStompKit"],
             path: "Sources/Test"
