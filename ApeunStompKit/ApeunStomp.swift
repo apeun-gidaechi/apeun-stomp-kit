@@ -205,33 +205,25 @@ public class ApeunStomp: NSObject {
     public func subBody<D: Decodable>(
         destination: String,
         res: D.Type
-    ) -> AnyPublisher<D, StompError> {
+    ) -> AnyPublisher<D, Never> {
         connection = true
         subscribeToDestination(destination: destination, ackMode: .AutoMode)
         return subject
-            .tryMap { (e: ApeunStompEvent) -> D in
+            .compactMap { (e: ApeunStompEvent) -> D? in
                 guard case .stompClient(let jsonBody, _, _, let d) = e,
                       d == destination,
                       let json = jsonBody.data(using: .utf8) else {
-                    if case .serverDidSendError(let description, let message) = e {
-                        print("\(description), \(message ?? "")")
-                    }
-                    throw StompError.unknown
+                    return nil
                 }
                 do {
                     let res = try self.jsonDecoder.decode(D.self, from: json)
                     print(res)
                     return res
                 } catch {
+                    print("ApeunStomp.subBody - descoding failure")
                     print(error)
-                    throw StompError.decodingFailure
+                    return nil
                 }
-            }
-            .mapError { (error: Error) -> StompError in
-                guard let error = error as? StompError else {
-                    return StompError.unknown
-                }
-                return error
             }
             .receive(on: DispatchQueue.main)
             .eraseToAnyPublisher()
