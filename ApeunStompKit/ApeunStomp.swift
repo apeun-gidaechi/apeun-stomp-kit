@@ -16,6 +16,7 @@ public class ApeunStomp: NSObject {
     // MARK: - Parameters
     private var request: URLRequest
     private var connectionHeaders: StompHeaders?
+    private let log: Bool
     
     var socket: SRWebSocket?
     var sessionId: String?
@@ -28,10 +29,12 @@ public class ApeunStomp: NSObject {
     
     public init(
         request: URLRequest,
-        connectionHeaders: StompHeaders? = nil
+        connectionHeaders: StompHeaders? = nil,
+        log: Bool = true
     ) {
         self.request = request
         self.connectionHeaders = connectionHeaders
+        self.log = log
     }
     
     // MARK: - Start / End
@@ -74,10 +77,16 @@ public class ApeunStomp: NSObject {
     public func sendJSONForDict(dict: Encodable, to destination: String) {
         do {
             let json = try String(decoding: JSONEncoder().encode(dict), as: UTF8.self)
+            if log {
+                var encoder = JSONEncoder()
+                encoder.outputFormatting = .prettyPrinted
+                let json = try String(decoding: encoder.encode(dict), as: UTF8.self)
+                print(json)
+            }
             let header = [StompCommands.commandHeaderContentType.rawValue:"application/json;charset=UTF-8"]
             sendMessage(message: json, to: destination, withHeaders: header, withReceipt: nil)
         } catch {
-            print("error serializing JSON: \(error)")
+            print("😱 STOMP error serializing JSON: \(error)")
         }
     }
     
@@ -204,6 +213,7 @@ public class ApeunStomp: NSObject {
     // MARK: - Subscribe
     public func subBody<D: Decodable>(
         destination: String,
+        log: Bool = true,
         res: D.Type
     ) -> AnyPublisher<D, Never> {
         connection = true
@@ -214,6 +224,9 @@ public class ApeunStomp: NSObject {
                       d == destination,
                       let json = jsonBody.data(using: .utf8) else {
                     return nil
+                }
+                if log {
+                    print(json.toPrettyPrintedString)
                 }
                 do {
                     let res = try self.jsonDecoder.decode(D.self, from: json)
