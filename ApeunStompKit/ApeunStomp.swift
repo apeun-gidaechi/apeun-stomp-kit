@@ -25,7 +25,7 @@ public class ApeunStomp: NSObject {
     private var reconnectTimer : Timer?
     
     public let subject = PassthroughSubject<ApeunStompEvent, Never>()
-    private let jsonDecoder = JSONDecoder()
+    public var jsonDecoder = JSONDecoder()
     
     public init(
         request: URLRequest,
