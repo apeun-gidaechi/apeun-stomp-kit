@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apeun-gidaechi/SocketRocket.git",
       "state" : {
-        "revision" : "ea0fca73f6444c29fd847ebd8a2fc5abadef093f",
-        "version" : "1.0.1"
+        "revision" : "8ffbc307b4f7ff343fad54456151b137bb57840a",
+        "version" : "0.0.1"
       }
     }
   ],
