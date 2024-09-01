@@ -15,7 +15,7 @@ public class ApeunStomp: NSObject {
     public typealias StompHeaders = [String: String]
     // MARK: - Parameters
     private var request: URLRequest
-    private var connectionHeaders: StompHeaders?
+    public var connectionHeaders: StompHeaders?
     private let log: Bool
     
     var socket: SRWebSocket?
@@ -378,25 +378,18 @@ public class ApeunStomp: NSObject {
         self.closeSocket()
     }
     
-    // Reconnect after one sec or arg, if reconnect is available
-    // TODO: MAKE A VARIABLE TO CHECK RECONNECT OPTION IS AVAILABLE OR NOT
-//    public func reconnect(request: URLRequest, delegate: ApeunStompDelegate, connectionHeaders: StompHeaders = [:], time: Double = 1.0, exponentialBackoff: Bool = true){
-//        reconnectTimer = Timer.scheduledTimer(withTimeInterval: time, repeats: true, block: { _ in
-//            self.reconnectLogic(request: request, delegate: delegate
-//                                , connectionHeaders: connectionHeaders)
-//        })
-//    }
+    // MARK: - Reconnect
+    public func reconnect(time: Double = 1.0) {
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: time, repeats: true) { _ in
+            self.reconnectLogic()
+        }
+    }
     
-//    private func reconnectLogic(request: URLRequest, delegate: ApeunStompDelegate, connectionHeaders: StompHeaders = [:]){
-//        // Check if connection is alive or dead
-//        if (!self.connection) {
-//            if !connectionHeaders.isEmpty {
-//                self.openSocket(request: request, delegate: delegate, connectionHeaders: connectionHeaders)
-//            } else {
-//                self.openSocket(request: request, delegate: delegate)
-//            }
-//        }
-//    }
+    private func reconnectLogic() {
+        if !self.connection {
+            self.openSocket()
+        }
+    }
     
     public func stopReconnect() {
         reconnectTimer?.invalidate()
