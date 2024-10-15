@@ -11,9 +11,9 @@ public extension ApeunStomp {
         subscribeToDestination(destination: destination, ackMode: .AutoMode)
         return subject
             .compactMap { (e: ApeunStompEvent) -> D? in
-                guard case .stompClient(let jsonBody, _, _, let d) = e,
+                guard case .stompClient(let body, _, let d) = e,
                       d == destination,
-                      let json = jsonBody.data(using: .utf8) else {
+                      let json = body?.data(using: .utf8) else {
                     return nil
                 }
                 if log {

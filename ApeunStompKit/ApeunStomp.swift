@@ -2,7 +2,7 @@ import SocketRocket
 import Combine
 
 public enum ApeunStompEvent {
-    case stompClient(jsonBody: String, stringBody: String?, header: ApeunStomp.StompHeaders?, destination: String)
+    case stompClient(body: String?, header: ApeunStomp.StompHeaders?, destination: String)
     case stompClientDidDisconnect
     case stompClientDidConnect
     case stompClientDidTryConnect
@@ -169,26 +169,32 @@ public class ApeunStomp: NSObject {
         return ""
     }
     
+    struct Frame {
+        let command: StompCommands
+        let headers: StompHeaders
+        let body: String?
+    }
+    
     // MARK: - Receive
-    private func receiveFrame(command: StompCommands, headers: StompHeaders, body: String?) {
-        switch command {
+    private func receiveFrame(frame: Frame) {
+        switch frame.command {
         case .responseFrameConnected:
-            if let sessId = headers[StompCommands.responseHeaderSession.rawValue] {
+            if let sessId = frame.headers[StompCommands.responseHeaderSession.rawValue] {
                 sessionId = sessId
             }
             subject.send(.stompClientDidConnect)
         case .responseFrameMessage:
-            subject.send(.stompClient(jsonBody: body ?? "", stringBody: body, header: headers, destination: self.destinationFromHeader(header: headers)))
+            subject.send(.stompClient(body: frame.body, header: frame.headers, destination: self.destinationFromHeader(header: frame.headers)))
         case .responseFrameReceipt:
-            if let receiptId = headers[StompCommands.responseHeaderReceiptId.rawValue] {
+            if let receiptId = frame.headers[StompCommands.responseHeaderReceiptId.rawValue] {
                 subject.send(.serverDidSendReceipt(receiptId: receiptId))
             }
         case .responseFrameError:
-            if let msg = headers[StompCommands.responseHeaderErrorMessage.rawValue] {
-                subject.send(.serverDidSendError(description: msg, message: body))
+            if let msg = frame.headers[StompCommands.responseHeaderErrorMessage.rawValue] {
+                subject.send(.serverDidSendError(description: msg, message: frame.body))
             }
         default:
-            if command.rawValue.count == 0 {
+            if frame.command.rawValue.count == 0 {
                 try? socket?.send(string: StompCommands.commandPing.rawValue)
                 subject.send(.serverDidSendPing)
             }
@@ -307,64 +313,70 @@ public class ApeunStomp: NSObject {
 
 // MARK: - SRWebSocketDelegate
 extension ApeunStomp: SRWebSocketDelegate {
-    private func processString(string: String) {
+    private func processString(string: String) -> Frame? {
         var contents = string.components(separatedBy: "\n")
         if contents.first == "" {
             contents.removeFirst()
         }
         
-        if let command = contents.first {
-            var headers: StompHeaders = [:]
-            var body = ""
-            var hasHeaders  = false
-            
-            contents.removeFirst()
-            for line in contents {
-                if hasHeaders == true {
-                    body += line
+        guard let command = contents.first else {
+            return nil
+        }
+        
+        var headers: StompHeaders = [:]
+        var body = ""
+        var hasHeaders  = false
+        
+        contents.removeFirst()
+        for line in contents {
+            if hasHeaders == true {
+                body += line
+            } else {
+                if line == "" {
+                    hasHeaders = true
                 } else {
-                    if line == "" {
-                        hasHeaders = true
-                    } else {
-                        let parts = line.components(separatedBy: ":")
-                        if let key = parts.first {
-                            headers[key] = parts.dropFirst().joined(separator: ":")
-                        }
+                    let parts = line.components(separatedBy: ":")
+                    if let key = parts.first {
+                        headers[key] = parts.dropFirst().joined(separator: ":")
                     }
                 }
             }
-            
-            // Remove the garbage from body
-            if body.hasSuffix("\0") {
-                body = body.replacingOccurrences(of: "\0", with: "")
-            }
-            
-            receiveFrame(command: StompCommands(rawValue: command) ?? .ackAuto, headers: headers, body: body)
         }
+        
+        // Remove the garbage from body
+        if body.hasSuffix("\0") {
+            body = body.replacingOccurrences(of: "\0", with: "")
+        }
+        
+        return Frame(
+            command: StompCommands(rawValue: command) ?? .ackAuto,
+            headers: headers,
+            body: body
+        )
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didReceiveMessage message: Any) {
-        if let strData = message as? NSData {
-            if let msg = String(data: strData as Data, encoding: String.Encoding.utf8) {
-                processString(string: msg)
-            }
+        var frame: Frame?
+        if let strData = message as? NSData,
+           let msg = String(data: strData as Data, encoding: String.Encoding.utf8) {
+            frame = processString(string: msg)
         } else if let str = message as? String {
-            processString(string: str)
+            frame = processString(string: str)
+        }
+        if let frame {
+            receiveFrame(frame: frame)
         }
     }
     
     public func webSocketDidOpen(_ webSocket: SRWebSocket) {
-        //        print("WebSocket is connected")
         connect()
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didFailWithError error: Error) {
-        //        print("didFailWithError: \(String(describing: error))")
         subject.send(.serverDidSendError(description: error.localizedDescription, message: nil))
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didCloseWithCode code: Int, reason: String?, wasClean: Bool) {
-        //        print("didCloseWithCode \(code), reason: \(String(describing: reason))")
         subject.send(.stompClientDidDisconnect)
     }
     
