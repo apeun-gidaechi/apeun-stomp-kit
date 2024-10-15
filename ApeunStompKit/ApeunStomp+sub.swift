@@ -43,6 +43,16 @@ public extension ApeunStomp {
             .eraseToAnyPublisher()
     }
     
+    func subTryConnect() -> AnyPublisher<Void, Never> {
+        subject
+            .compactMap { e in
+                guard case .stompClientDidTryConnect = e else {
+                    return nil
+                }
+            }
+            .eraseToAnyPublisher()
+    }
+    
     func subPing() -> AnyPublisher<Void, Never> {
         subject
             .compactMap { e in
