@@ -5,6 +5,7 @@ public enum ApeunStompEvent {
     case stompClient(jsonBody: String, stringBody: String?, header: ApeunStomp.StompHeaders?, destination: String)
     case stompClientDidDisconnect
     case stompClientDidConnect
+    case stompClientDidTryConnect
     case serverDidSendReceipt(receiptId: String)
     case serverDidSendError(description: String, message: String?)
     case serverDidSendPing
@@ -21,7 +22,7 @@ public class ApeunStomp: NSObject {
     var socket: SRWebSocket?
     var sessionId: String?
     
-    private(set) var connection: Bool = false
+    var connection: Bool = false
     private var reconnectTimer : Timer?
     
     public let subject = PassthroughSubject<ApeunStompEvent, Never>()
@@ -42,6 +43,7 @@ public class ApeunStomp: NSObject {
     public func openSocket() {
         self.connection = true
         if socket == nil || socket?.readyState == .CLOSED {
+            subject.send(.stompClientDidTryConnect)
             socket = SRWebSocket(urlRequest: request)
             socket!.delegate = self
             socket!.open()
@@ -209,93 +211,6 @@ public class ApeunStomp: NSObject {
             }
         }
     }
-    
-    // MARK: - Subscribe
-    public func subBody<D: Decodable>(
-        destination: String,
-        log: Bool = true,
-        res: D.Type
-    ) -> AnyPublisher<D, Never> {
-        connection = true
-        subscribeToDestination(destination: destination, ackMode: .AutoMode)
-        return subject
-            .compactMap { (e: ApeunStompEvent) -> D? in
-                guard case .stompClient(let jsonBody, _, _, let d) = e,
-                      d == destination,
-                      let json = jsonBody.data(using: .utf8) else {
-                    return nil
-                }
-                if log {
-                    print(json.toPrettyPrintedString)
-                }
-                do {
-                    let res = try self.jsonDecoder.decode(D.self, from: json)
-                    print(res)
-                    return res
-                } catch {
-                    print("ApeunStomp.subBody - descoding failure")
-                    print(error)
-                    return nil
-                }
-            }
-            .receive(on: DispatchQueue.main)
-            .eraseToAnyPublisher()
-    }
-    
-    public func subConnect() -> AnyPublisher<Void, Never> {
-        subject
-            .compactMap { e in
-                guard case .stompClientDidConnect = e else {
-                    return nil
-                }
-            }
-            .eraseToAnyPublisher()
-    }
-    
-    public func subPing() -> AnyPublisher<Void, Never> {
-        subject
-            .compactMap { e in
-                guard case .serverDidSendPing = e else {
-                    return nil
-                }
-            }
-            .eraseToAnyPublisher()
-    }
-    
-    public func subSendError() -> AnyPublisher<SendStompError, Never> {
-        subject
-            .compactMap { e in
-                guard case .serverDidSendError(let description, let message) = e else {
-                    return nil
-                }
-                return SendStompError(description: description, message: message)
-            }
-            .eraseToAnyPublisher()
-    }
-    
-    public func subDisconnect() -> AnyPublisher<Void, Never> {
-        subject
-            .compactMap { e in
-                guard case .stompClientDidDisconnect = e else {
-                    return nil
-                }
-                return
-            }
-            .eraseToAnyPublisher()
-    }
-    
-    public func subSendReceipt() -> AnyPublisher<String, Never> {
-        subject
-            .compactMap { e in
-                guard case .serverDidSendReceipt(let receiptId) = e else {
-                    return nil
-                }
-                return receiptId
-            }
-            .eraseToAnyPublisher()
-    }
-    
-
     
     public func subscribeToDestination(destination: String, ackMode: StompAckMode) {
         let ack = switch ackMode {
