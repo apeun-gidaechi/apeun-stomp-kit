@@ -169,46 +169,30 @@ public class ApeunStomp: NSObject {
         return ""
     }
     
-    private func dictForJSONString(jsonStr: String?) -> AnyObject? {
-        guard let jsonStr else {
-            return nil
-        }
-        do {
-            if let data = jsonStr.data(using: String.Encoding.utf8) {
-                let json = try JSONSerialization.jsonObject(with: data, options: .allowFragments)
-                return json as AnyObject
-            }
-        } catch {
-            print("error serializing JSON: \(error)")
-        }
-        return nil
-    }
-    
     // MARK: - Receive
     private func receiveFrame(command: StompCommands, headers: StompHeaders, body: String?) {
-        if command == .responseFrameConnected {
-            // Connected
+        switch command {
+        case .responseFrameConnected:
             if let sessId = headers[StompCommands.responseHeaderSession.rawValue] {
                 sessionId = sessId
             }
             subject.send(.stompClientDidConnect)
-        } else if command == .responseFrameMessage {   // Message comes to this part
-            // Response
-            subject.send(.stompClient(jsonBody:/* self.dictForJSONString(jsonStr: body)*/body ?? "", stringBody: body, header: headers, destination: self.destinationFromHeader(header: headers)))
-        } else if command == .responseFrameReceipt {   //
-            // Receipt
+        case .responseFrameMessage:
+            subject.send(.stompClient(jsonBody: body ?? "", stringBody: body, header: headers, destination: self.destinationFromHeader(header: headers)))
+        case .responseFrameReceipt:
             if let receiptId = headers[StompCommands.responseHeaderReceiptId.rawValue] {
                 subject.send(.serverDidSendReceipt(receiptId: receiptId))
             }
-        } else if command.rawValue.count == 0 {
-            // Pong from the server
-            try? socket?.send(string: StompCommands.commandPing.rawValue)
-            subject.send(.serverDidSendPing)
-        } else if command == .responseFrameError {
-            // Error
+        case .responseFrameError:
             if let msg = headers[StompCommands.responseHeaderErrorMessage.rawValue] {
                 subject.send(.serverDidSendError(description: msg, message: body))
             }
+        default:
+            if command.rawValue.count == 0 {
+                try? socket?.send(string: StompCommands.commandPing.rawValue)
+                subject.send(.serverDidSendPing)
+            }
+            break
         }
     }
     
