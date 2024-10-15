@@ -38,8 +38,8 @@ public class ApeunStomp: NSObject {
     // MARK: - Start / End
     
     public func openSocket() {
-        self.connection = true
         if socket == nil || socket?.readyState == .CLOSED {
+            self.connection = true
             socket = SRWebSocket(urlRequest: request)
             socket!.delegate = self
             socket!.open()
@@ -48,6 +48,7 @@ public class ApeunStomp: NSObject {
     
     private func closeSocket() {
         subject.send(.stompClientDidDisconnect)
+        connection = false
         if socket != nil {
             // Close the socket
             socket!.close()
@@ -127,6 +128,7 @@ public class ApeunStomp: NSObject {
     ) {
         guard socket?.readyState == .OPEN else {
             subject.send(.stompClientDidDisconnect)
+            connection = false
             return
         }
         var frameString = ""
@@ -322,6 +324,7 @@ extension ApeunStomp: SRWebSocketDelegate {
     
     public func webSocket(_ webSocket: SRWebSocket, didCloseWithCode code: Int, reason: String?, wasClean: Bool) {
         subject.send(.stompClientDidDisconnect)
+        connection = false
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didReceivePong pongPayload: Data?) {
