@@ -2,18 +2,15 @@ import SocketRocket
 import Combine
 
 public enum ApeunStompEvent {
-    case stompClient(body: String?, header: ApeunStomp.StompHeaders?, destination: String)
+    case stompClient(body: String?, header: StompHeaders?, destination: String)
     case stompClientDidDisconnect
     case stompClientDidConnect
-    case stompClientDidTryConnect
     case serverDidSendReceipt(receiptId: String)
     case serverDidSendError(description: String, message: String?)
     case serverDidSendPing
 }
 
 public class ApeunStomp: NSObject {
-    
-    public typealias StompHeaders = [String: String]
     // MARK: - Parameters
     private var request: URLRequest
     public var connectionHeaders: StompHeaders?
@@ -43,7 +40,6 @@ public class ApeunStomp: NSObject {
     public func openSocket() {
         self.connection = true
         if socket == nil || socket?.readyState == .CLOSED {
-            subject.send(.stompClientDidTryConnect)
             socket = SRWebSocket(urlRequest: request)
             socket!.delegate = self
             socket!.open()
@@ -169,12 +165,6 @@ public class ApeunStomp: NSObject {
         return ""
     }
     
-    struct Frame {
-        let command: StompCommands
-        let headers: StompHeaders
-        let body: String?
-    }
-    
     // MARK: - Receive
     private func receiveFrame(frame: Frame) {
         switch frame.command {
@@ -194,10 +184,6 @@ public class ApeunStomp: NSObject {
                 subject.send(.serverDidSendError(description: msg, message: frame.body))
             }
         default:
-            if frame.command.rawValue.count == 0 {
-                try? socket?.send(string: StompCommands.commandPing.rawValue)
-                subject.send(.serverDidSendPing)
-            }
             break
         }
     }
@@ -313,55 +299,13 @@ public class ApeunStomp: NSObject {
 
 // MARK: - SRWebSocketDelegate
 extension ApeunStomp: SRWebSocketDelegate {
-    private func processString(string: String) -> Frame? {
-        var contents = string.components(separatedBy: "\n")
-        if contents.first == "" {
-            contents.removeFirst()
-        }
-        
-        guard let command = contents.first else {
-            return nil
-        }
-        
-        var headers: StompHeaders = [:]
-        var body = ""
-        var hasHeaders  = false
-        
-        contents.removeFirst()
-        for line in contents {
-            if hasHeaders == true {
-                body += line
-            } else {
-                if line == "" {
-                    hasHeaders = true
-                } else {
-                    let parts = line.components(separatedBy: ":")
-                    if let key = parts.first {
-                        headers[key] = parts.dropFirst().joined(separator: ":")
-                    }
-                }
-            }
-        }
-        
-        // Remove the garbage from body
-        if body.hasSuffix("\0") {
-            body = body.replacingOccurrences(of: "\0", with: "")
-        }
-        
-        return Frame(
-            command: StompCommands(rawValue: command) ?? .ackAuto,
-            headers: headers,
-            body: body
-        )
-    }
-    
     public func webSocket(_ webSocket: SRWebSocket, didReceiveMessage message: Any) {
         var frame: Frame?
         if let strData = message as? NSData,
            let msg = String(data: strData as Data, encoding: String.Encoding.utf8) {
-            frame = processString(string: msg)
+            frame = .from(message: msg)
         } else if let str = message as? String {
-            frame = processString(string: str)
+            frame = .from(message: str)
         }
         if let frame {
             receiveFrame(frame: frame)
@@ -381,6 +325,7 @@ extension ApeunStomp: SRWebSocketDelegate {
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didReceivePong pongPayload: Data?) {
-        //        print("didReceivePong")
+        try? socket?.send(string: StompCommands.commandPing.rawValue)
+        subject.send(.serverDidSendPing)
     }
 }
