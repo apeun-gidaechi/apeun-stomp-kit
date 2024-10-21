@@ -127,8 +127,7 @@ public class ApeunStomp: NSObject {
         header: StompHeaders?
     ) {
         guard socket?.readyState == .OPEN else {
-            subject.send(.stompClientDidDisconnect)
-            connection = false
+            self.closeSocket()
             return
         }
         var frameString = ""
@@ -323,8 +322,7 @@ extension ApeunStomp: SRWebSocketDelegate {
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didCloseWithCode code: Int, reason: String?, wasClean: Bool) {
-        subject.send(.stompClientDidDisconnect)
-        connection = false
+        self.closeSocket()
     }
     
     public func webSocket(_ webSocket: SRWebSocket, didReceivePong pongPayload: Data?) {
